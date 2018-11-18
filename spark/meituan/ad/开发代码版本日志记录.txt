@@ -1,0 +1,68 @@
+
+代码 ->  AdClickRealTimeStateSparkV1
+=========================================================================
+    -a. 创建上下文
+        SparkContext(调度每批次RDD执行)、StreamingContext(读取流式实时数据)
+    -b. Kafka集成形成DStream
+        采用Direct方式从Kafka Topic中读取数据
+    -c. 数据格式转换
+        将从Kafka读取的<文本数据>转换封装到<AdClickRecord>中
+    -d. 黑名单的更新操作
+        黑名单存储在Redis中，在某个时间范围内某个用户点击所有广告的次数 大于 100
+        过滤<白名单>数据，白名单数据模拟产生数据（未从Redis中读取）
+    -e. 过滤黑名单用户点击数据
+        Reduce过滤，RDD的leftOuterJoin操作
+        1. 将数据转换为Key/Value类型RDD，方便按照Key进行数据Join
+        2. 调用leftOuterJoin/RightOuterJoin
+        3. 调用filter过滤数据
+        4. map数据转换
+    -f. 实时累加统计各个广告点击流量
+        (date, 省份, 城市， 广告), 点击量
+        使用updateStateByKey API实现，考虑性能问题（计数器Counter）
+        将数据输出到关系型数据库MySQL表中 -> 插入 Or 更新 方式
+
+
+
+代码 ->  AdClickRealTimeStateSparkV2
+=========================================================================
+    针对 AdClickRealTimeStateSparkV1进行代码优化，如下优化：
+    -a. 状态统计<维度信息>封装
+        Case Class StateDimension
+            date, province, city, adId
+    -b. 更新黑名单操作
+        从Redis中读取白名单数据，广播变量方式过滤用户
+
+
+
+代码 ->  AdClickRealTimeStateSparkV3
+=========================================================================
+    -a. 计算每日各个省份Top5热门广告数据
+        - aggregateByKey 聚合Top5
+            聚合函数使用
+        - 各省份Top5广告数据保存MySQL数据库表中
+            采用先删除（依据BatchDate删除），再插入
+            -i. 使用truncate 清空表的数据
+                发现会清空昨日实时累加统计各省份Top5数据
+            -ii. 使用delete依据BatchDate删除
+                每次删除BatchDate的数据即可
+            发现：在一个Connection中，先delete删除，再insert，将会出现DeadLock，需要分别获取Conn进行操作即可
+
+
+
+代码 ->  AdClickRealTimeStateSparkV4
+=========================================================================
+    -a. 计算每日各个省份Top5热门广告数据
+        - 各省份Top5广告数据保存MySQL数据库表中
+            采用 增加字段 row_number 序号，实现插入更新操作
+    -b. 实时统计最10分钟的某广告点击流量
+        使用reduceByKeyAndWindow(invReduceFunc函数)实现
+        保存结果时需要BatchTime时间用以记录批次时间数据，再次仅仅控制台打印，未保存MySQL或Redis
+
+
+
+代码 ->  AdClickRealTimeStateSparkV4
+=========================================================================
+
+
+
+
